@@ -1,0 +1,9 @@
+{
+  "name": "figma-to-code",
+  "version": "0.1.0",
+  "description": "Figma URL → HTML/CSS/JS 변환 플러그인",
+  "author": {
+    "name": "leejuhwan"
+  },
+  "skills": "./skills/"
+}

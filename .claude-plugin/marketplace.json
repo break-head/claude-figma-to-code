@@ -1,0 +1,17 @@
+{
+  "name": "figma-to-code-local",
+  "owner": {
+    "name": "leejuhwan"
+  },
+  "plugins": [
+    {
+      "name": "figma-to-code",
+      "description": "Figma URL을 넣으면 HTML/CSS/JS를 생성하는 Claude Code 플러그인",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/figma-to-code"
+      ]
+    }
+  ]
+}

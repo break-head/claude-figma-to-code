@@ -1,0 +1,15 @@
+{
+  "name": "figma-to-code-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Figma-to-Code pipeline tools",
+  "scripts": {
+    "test": "node --test tools/__tests__/*.test.js",
+    "pipeline": "node tools/pipeline.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "chokidar": "^4.0.0",
+    "ws": "^8.18.0"
+  }
+}
