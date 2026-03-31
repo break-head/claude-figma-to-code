@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"node --test tools/__tests__/preview-server.test.js 2>&1\",\"description\":\"Run preview-server tests with before/after and concurrency:1\"}",
+  "error": "Exit code 1\nTAP version 13\n# [preview-server] http://localhost:3150\n# [preview-server] http://localhost:3150\n# Subtest: preview-server\n    # Subtest: HTML 파일을 서빙한다\n    ok 1 - HTML 파일을 서빙한다\n      ---\n      duration_ms: 27.294291\n      type: 'test'\n      ...\n# [preview-server] http://localhost:3150\n    # Subtest: CSS 파일을 서빙한다\n    not ok 2 - CSS 파일을 서빙한다\n      ---\n      duration_ms: 0.768459\n      type: 'test'\n      location: '/Users/leejuhwan/Desktop/figma-to-code/tools/__tests__/preview-server.te...",
+  "timestamp": "2026-03-31T13:45:47.588Z",
+  "retry_count": 4
+}
