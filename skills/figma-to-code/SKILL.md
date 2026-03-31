@@ -1,19 +1,18 @@
 ---
 name: figma-to-code
-description: Figma URL을 넣으면 배포 가능한 HTML/CSS/JS를 생성하고 브라우저에서 실시간 수정할 수 있습니다. "figma", "피그마", "디자인을 코드로", "HTML로 만들어줘", "figma.com" URL이 포함된 요청에 사용됩니다.
+description: Figma URL을 넣으면 배포 가능한 HTML/CSS/JS를 생성합니다. "figma", "피그마", "디자인을 코드로", "HTML로 만들어줘", "figma.com" URL이 포함된 요청에 사용됩니다.
 ---
 
-# Figma-to-Code
+# Figma-to-Code v2
 
 Figma 디자인 URL을 받아 배포 가능한 Vanilla HTML/CSS/JS 단일 페이지를 생성한다.
-생성 후 브라우저 live-preview에서 요소를 선택해 스타일/텍스트를 실시간으로 수정할 수 있다.
+MCP 코드를 베이스로 섹션별 변환하고, 시각적 보정 루프로 Figma 원본에 가까운 결과를 보장한다.
 
 ## 트리거
 
 다음과 같은 요청에 이 스킬이 활성화된다:
 - "이 Figma 디자인을 HTML로 만들어줘"
 - "figma.com/design/... 이걸 코드로 변환해줘"
-- "/figma-to-code <URL>"
 - 메시지에 figma.com URL이 포함된 경우
 
 ## 실행 단계
@@ -30,98 +29,100 @@ node-id가 없으면 사용자에게 특정 프레임 URL을 요청한다:
 
 ### Step 2: Figma MCP로 디자인 데이터 수집
 
-Figma MCP 도구를 호출한다:
+1. **`get_design_context`**(fileKey, nodeId) 호출 → React+Tailwind 코드 + 스크린샷 반환
+2. 반환된 코드를 `output/.mcp-source.jsx`에 Write 도구로 저장
+3. MCP 응답 원본 데이터를 `output/.figma-data.json`에 저장
+4. 반환된 스크린샷은 대화 컨텍스트에 유지 (보정 루프 레퍼런스)
 
-1. **`get_design_context`**(fileKey, nodeId): 디자인 데이터, 코드 힌트, 스크린샷
-2. **`get_metadata`**(fileKey, nodeId): 프레임 이름, 크기, 구조
+### Step 3: 섹션 식별
 
-### Step 3: Frame Analyzer — mobile/desktop 판단
+MCP 코드를 읽고 최상위 컴포넌트/섹션을 구분한다:
+- 최상위 JSX의 직접 자식 요소들을 섹션으로 식별
+- 각 섹션에 이름 부여 (hero, features, cta, footer 등)
+- 섹션 목록을 사용자에게 보여주고 확인
+  > "4개 섹션으로 나눕니다: Hero, Features, CTA, Footer — 맞나요?"
 
-get_metadata 결과로 프레임 유형을 판단한다. 단순 width가 아닌 복합 판단:
+### Step 4: 섹션별 변환
 
-1. **프레임 이름** — "Mobile", "Desktop", "375", "1440" 등 키워드 → 확정
-2. **크기 비율** — width < height → 모바일 가능성 높음
-3. **width 구간** — 보조 지표 (<=480 모바일, >=1024 데스크탑)
-4. **레이아웃 구조** — 단일 컬럼 → 모바일, 다중 컬럼 → 데스크탑
-5. **형제 프레임** — 동일 섹션에 375px + 1440px이 나란히 있으면 반응형 세트
-6. **확신 못하면** → 사용자에게 "이 프레임은 모바일인가요, 데스크탑인가요?" 질문
+각 섹션마다 MCP의 React+Tailwind 코드를 바닐라 HTML + CSS로 변환한다.
 
-결과에 따른 분기:
-- **데스크탑만** → "모바일 반응형도 추가할까요?" 질문. Yes면 모바일 URL 요청
-- **모바일만** → 모바일 전용 코드 생성
-- **둘 다 제공** → Step 3-1 Responsive Mapper 실행
+**변환 규칙:**
 
-#### Step 3-1: Responsive Mapper (둘 다 제공된 경우)
-
-두 프레임의 디자인 데이터를 **코드 생성 전에** 매핑한다:
-- 노드 매칭: 이름, 구조, 텍스트 내용 기반으로 같은 요소 판단
-- 차이점 추출: layout, font-size, spacing, 표시/숨김 차이 기록
-- 구조 차이 감지: 3열→1열, 데스크탑에만 있는 요소, 순서 변경
-- 통합 스펙 생성: 하나의 HTML 구조 + desktop CSS 기본 + `@media` mobile 오버라이드
-
-### Step 4: 코드 생성
-
-다음 규칙을 반드시 따른다:
-
-**HTML:**
-- 시맨틱 HTML5 태그: `<header>`, `<nav>`, `<main>`, `<section>`, `<article>`, `<footer>`
+HTML:
+- 시맨틱 HTML5 태그: `<header>`, `<nav>`, `<main>`, `<section>`, `<footer>`
 - BEM 스타일 클래스명: `.hero`, `.hero__title`, `.hero__cta`
-- 접근성: alt 텍스트, heading 계층 (h1 > h2 > h3)
-- `styles.css`와 `script.js`를 외부 파일로 링크
+- 이미지는 `assets/` 상대경로: `<img src="assets/hero.png">`
 
-**CSS:**
+CSS:
 - `:root`에 디자인 토큰을 CSS 변수로 정의 (색상, 폰트, 간격)
 - 색상/폰트 하드코딩 금지 — 반드시 CSS 변수 참조
 - Flexbox 또는 CSS Grid로 레이아웃
-- 반응형이면 desktop-first + `max-width` 미디어 쿼리
 
-**JS:**
+JS:
 - 인터랙션이 필요할 때만 생성. Vanilla JS만 사용.
 
-**이미지:**
-- Figma에서 이미지 URL 수집 → `output/assets-manifest.json`에 목록 작성
-- HTML에서 `<img src="assets/파일명.확장자">`로 참조
-
-**출력 파일:**
-- `output/index.html`
-- `output/styles.css`
-- `output/script.js` (필요 시에만)
-- `output/assets-manifest.json` — 이미지 URL 목록 JSON 배열:
+이미지:
+- Figma에서 이미지 URL 수집 → `output/assets-manifest.json`에 목록 작성:
   ```json
   [{ "url": "https://figma-image-url/...", "filename": "hero.png" }]
   ```
-- `output/.figma-data.json` — `get_design_context` 응답 원본 저장 (Write 도구로)
 
-### Step 5: 후처리 파이프라인 실행
+**저장:**
+- `output/sections/01-hero.html` + `output/sections/01-hero.css`
+- `output/sections/02-features.html` + `output/sections/02-features.css`
+- 번호 순서 = 페이지 내 배치 순서
+- Write 도구로 각 파일을 즉시 저장
 
-코드 생성이 완료되면 다음 명령을 실행한다:
+### Step 5: 후처리 파이프라인
 
 ```bash
-node tools/pipeline.js output/
+node tools/postprocess.js output/
 ```
 
-이 명령이 자동으로 수행하는 작업:
-1. 디자인 토큰 추출 및 검증
-2. 이미지 에셋 다운로드 (`assets-manifest.json` → `output/assets/`)
-3. HTML 요소에 `data-element-id` 자동 삽입
-4. Live-preview 서버 기동 (`http://localhost:3100`)
+자동 수행:
+1. 섹션 HTML/CSS를 index.html + styles.css로 합침
+2. Figma 데이터에서 디자인 토큰 추출 + 검증
+3. CSS 정규화 (하드코딩 색상→변수 교체, 네이밍 통일)
+4. 이미지 다운로드 (assets-manifest.json → output/assets/)
+5. HTML 요소에 data-element-id 삽입
 
-### Step 6: 결과 안내
+### Step 6: 시각적 보정 루프
+
+1. 프리뷰 서버 기동:
+```bash
+node tools/preview-server.js output/
+```
+
+2. 스크린샷 캡처 (Figma 프레임과 동일한 width 사용):
+```bash
+node tools/capture.js http://localhost:3100 output/.preview-screenshot.png <width>
+```
+
+3. Read 도구로 `output/.preview-screenshot.png` 읽기
+4. Figma MCP 스크린샷 (Step 2에서 대화 컨텍스트에 유지 중)과 비교
+5. 차이점을 구체적으로 식별:
+   - 색상 일치 여부
+   - 타이포그래피 (크기, 굵기, 행간)
+   - 간격 (padding, margin, gap)
+   - 레이아웃 구조 (요소 배치, 정렬)
+   - 이미지 위치/크기
+6. 차이가 있으면 해당 섹션 파일 수정 → `node tools/postprocess.js output/` 재실행 → 재캡처 → 재비교
+7. **최대 2회 반복**. 2회 후에도 차이가 있으면 남은 차이점을 사용자에게 리포트
+
+### Step 7: 결과 안내
 
 ```
-생성 완료!
+변환 완료!
 
 output/index.html — 메인 HTML
 output/styles.css — 스타일시트
 output/assets/    — 이미지 에셋
 
-Live Preview가 http://localhost:3100 에서 실행 중입니다.
-브라우저에서 요소를 클릭하면 스타일과 텍스트를 직접 수정할 수 있습니다.
+프리뷰: http://localhost:3100
 
 수정하려면 이 대화에서 바로 요청하세요:
   "히어로 섹션 배경색을 파란색으로 바꿔줘"
   "버튼 텍스트를 '무료 시작'으로 변경해줘"
-  "카드 레이아웃을 3열에서 2열로 바꿔줘"
 ```
 
 ## 수정 워크플로우
@@ -130,10 +131,12 @@ Live Preview가 http://localhost:3100 에서 실행 중입니다.
 1. `output/` 폴더의 해당 파일을 Read로 읽는다
 2. 정확한 위치를 찾아 Edit으로 수정한다
 3. CSS 변수 체계를 유지한다 (색상 변경 시 `:root` 변수를 수정)
-4. live-preview 서버가 자동으로 브라우저에 반영한다
+4. preview-server가 자동으로 브라우저에 반영한다
 
 ## 주의사항
 
 - Figma Pro/Org Dev seat 이상 권장 (Starter/View/Collab은 월 6회 API 제한)
-- 단일 페이지(랜딩, 프로모션)에 최적화. 복잡한 SPA/멀티페이지에는 부적합
-- live-preview 수정은 스타일/텍스트만 지원 (Phase 1)
+- 프로모션/이벤트 단일 페이지에 최적화. 복잡한 SPA/멀티페이지에는 부적합
+- 반응형은 미지원 (Phase 1). 단일 프레임만 변환
+- 커스텀 폰트는 Google Fonts 매핑 또는 시스템 폰트 대체
+- 시각적 보정 루프는 최대 2회. 완벽하지 않을 수 있음
