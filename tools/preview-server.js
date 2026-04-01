@@ -18,6 +18,8 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
 };
 
+const GRAB_SCRIPT = `<script src="//unpkg.com/react-grab/dist/index.global.js" crossorigin="anonymous"></script>`;
+
 const RELOAD_SCRIPT = `
 <script>
 (function() {
@@ -27,7 +29,7 @@ const RELOAD_SCRIPT = `
 </script>`;
 
 function injectReloadScript(html) {
-  return html.replace('</body>', `${RELOAD_SCRIPT}\n</body>`);
+  return html.replace('</body>', `${GRAB_SCRIPT}\n${RELOAD_SCRIPT}\n</body>`);
 }
 
 function startServer(outputDir, port = 3100) {

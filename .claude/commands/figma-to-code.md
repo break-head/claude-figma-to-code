@@ -44,6 +44,36 @@ MCP 코드를 읽고 최상위 컴포넌트/섹션을 구분한다:
 - `:root`에 디자인 토큰을 CSS 변수로 정의 (색상, 폰트, 간격)
 - 색상/폰트 하드코딩 금지 -- 반드시 CSS 변수 참조
 - Flexbox 또는 CSS Grid로 레이아웃
+- **절대 좌표 → 정렬 의도 추론 (중요):**
+  MCP 코드는 모든 요소를 `absolute` + `left/top` 픽셀 좌표로 배치한다. 바닐라 HTML로 변환할 때 이 좌표를 그대로 쓰지 말고, **레이아웃 의도를 추론하여 semantic한 CSS 정렬로 변환한다.**
+
+  **추론 방법:**
+  1. 부모 컨테이너 폭(보통 1052px = 1440px - padding 186px*2)을 기준으로 자식 요소의 `left` 값을 확인
+  2. 자식이 부모의 양쪽 여백과 대칭이면 → `justify-content: center` 또는 `margin: 0 auto`
+  3. 자식이 부모 좌측에 붙어있으면 → 기본 좌측 정렬
+  4. `text-center` 클래스가 있으면 → `text-align: center`
+  5. `-translate-x-1/2 left-[calc(50%...)]` 패턴 → 명확한 중앙 정렬
+
+  **예시:**
+  ```
+  부모 w-[1052px], 자식 left-[432px] w-[224px] + 형제 left-[708px]
+  → 자식 블록이 432~1072px 범위 = 부모 내 대칭 → 중앙 정렬
+  ```
+
+  절대 좌표를 보고 무조건 좌측 정렬로 변환하지 않는다.
+- **font-weight 보존 (중요):**
+  Figma MCP 코드에서 Bold/Regular를 별도 font-family로 구분하는 경우가 많다 (예: `font-['YouandiNewKr_Title:Bold']` vs `font-['YouandiNewKr_Title:Regular']`).
+  CSS 변수로 변환할 때 `font-family`만 바꾸면 커스텀 폰트가 없는 환경에서 fallback 폰트의 weight 구분이 안 된다.
+  **반드시 `font-weight`도 함께 지정한다:**
+  ```css
+  /* Bold 계열 */
+  font-family: var(--font-bold);
+  font-weight: 700;
+
+  /* Regular 계열 */
+  font-family: var(--font-regular);
+  font-weight: 400;
+  ```
 
 **JS:** 인터랙션이 필요할 때만 생성. Vanilla JS만 사용.
 
@@ -52,6 +82,40 @@ MCP 코드를 읽고 최상위 컴포넌트/섹션을 구분한다:
   ```json
   [{ "url": "https://figma-image-url/...", "filename": "hero.png" }]
   ```
+- **이미지 크롭/마스크 보존 (중요):**
+  MCP 코드에서 이미지가 컨테이너 안에서 크롭되는 패턴을 반드시 확인하고 바닐라 CSS로 변환한다.
+  Figma는 하나의 큰 이미지에서 특정 부분만 보여주기 위해 `overflow: hidden` 컨테이너 + 이미지에 퍼센트 기반 `width/height/left/top` 값을 사용한다.
+
+  **감지 패턴 (Tailwind):**
+  ```jsx
+  <div className="h-[365px] w-[243px]">        ← 컨테이너 (overflow:hidden)
+    <div className="overflow-hidden">
+      <img className="absolute h-[276.42%] left-[-493.07%] w-[652.38%] top-[-39.22%]" />
+    </div>
+  </div>
+  ```
+
+  **변환 결과 (Vanilla CSS):**
+  ```css
+  .person-crop {
+    width: 243px;
+    height: 365px;
+    overflow: hidden;
+    position: relative;
+  }
+  .person-crop img {
+    position: absolute;
+    max-width: none;
+    width: 652.38%;
+    height: 276.42%;
+    left: -493.07%;
+    top: -39.22%;
+  }
+  ```
+
+  이 패턴은 스프라이트 시트에서 특정 캐릭터를 크롭하거나, 큰 사진에서 특정 영역만 보여줄 때 사용된다. `object-fit: cover`로 대체하면 안 된다 — 원본 좌표를 그대로 옮겨야 한다.
+
+  마찬가지로 `mask-image`, `mask-size`, `mask-position` 등 마스크 속성도 MCP 코드에서 그대로 가져온다.
 
 **저장:**
 - `output/sections/01-hero.html` + `output/sections/01-hero.css`
