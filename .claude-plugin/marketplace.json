@@ -1,0 +1,14 @@
+{
+  "name": "claude-figma-to-code",
+  "owner": {
+    "name": "break-head"
+  },
+  "description": "Figma 디자인을 HTML/CSS/JS로 변환하는 플러그인 마켓플레이스",
+  "plugins": [
+    {
+      "name": "figma-to-code",
+      "source": "./",
+      "description": "Figma URL을 넣으면 HTML/CSS/JS를 생성하고 브라우저에서 실시간 수정할 수 있는 플러그인"
+    }
+  ]
+}
