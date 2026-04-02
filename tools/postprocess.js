@@ -1,67 +1,83 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const { success, fail, printResult } = require('./json-output.js');
 
 async function postprocess(outputDir) {
   const absDir = path.resolve(outputDir);
+  const jsxPath = path.join(absDir, '.mcp-source.jsx');
 
-  console.log(`\n=== figma-to-code postprocess ===`);
-  console.log(`Output: ${absDir}\n`);
-
-  // 1. Assemble sections
-  console.log('--- Step 1: Assemble ---');
-  const { assemble } = require('./assemble.js');
-  assemble(absDir);
-
-  // 2. Token Extractor
-  console.log('\n--- Step 2: Token Extractor ---');
-  const { run: runTokens } = require('./token-extractor.js');
-  runTokens(absDir);
-
-  // 3. Normalize CSS
-  console.log('\n--- Step 3: Normalize CSS ---');
-  const { normalizeCSS } = require('./normalize.js');
-  const warnings = normalizeCSS(absDir);
-
-  // 4. Download Assets
-  console.log('\n--- Step 4: Download Assets ---');
-  const { run: runDownload } = require('./download-assets.js');
-  await runDownload(absDir);
-
-  // 5. Inject IDs
-  console.log('\n--- Step 5: Inject Element IDs ---');
-  const { run: runInject } = require('./inject-ids.js');
-  runInject(absDir);
-
-  // 6. Validate (MCP 원본 대비 검증 — .mcp-source.jsx가 있을 때만)
-  let validation = null;
-  const mcpSource = path.join(absDir, '.mcp-source.jsx');
-  if (fs.existsSync(mcpSource)) {
-    console.log('\n--- Step 6: Validate (MCP vs Rendered) ---');
-    console.log('[postprocess] validate는 별도 실행: node tools/validate.js output/ http://localhost:3100');
-    console.log('[postprocess] 프리뷰 서버가 실행 중이어야 합니다.');
-  } else {
-    console.log('\n--- Step 6: Validate (skipped — .mcp-source.jsx 없음) ---');
+  if (!fs.existsSync(jsxPath)) {
+    return fail(`MCP 소스 없음: ${jsxPath}`, 'FILE_NOT_FOUND');
   }
 
-  console.log('\n=== Postprocess complete ===\n');
-  return { warnings, validation };
+  console.error('\n=== figma-to-code postprocess ===');
+  console.error(`Output: ${absDir}\n`);
+
+  // 1. Parse JSX
+  console.error('--- Step 1: Parse JSX ---');
+  const { parseJsx } = require('./parse-jsx.js');
+  const jsx = fs.readFileSync(jsxPath, 'utf-8');
+  const parseResult = parseJsx(jsx);
+  if (!parseResult.ok) return parseResult;
+
+  fs.writeFileSync(path.join(absDir, '.parsed.json'), JSON.stringify(parseResult.data, null, 2));
+  console.error(`[parse-jsx] ${parseResult.data.meta.nodeCount} nodes, ${parseResult.data.meta.imageCount} images`);
+
+  // 2. Convert to HTML
+  console.error('\n--- Step 2: Convert to HTML ---');
+  const { convertToHtml } = require('./convert-to-html.js');
+  const convertResult = convertToHtml(parseResult.data);
+  if (!convertResult.ok) return convertResult;
+
+  fs.writeFileSync(path.join(absDir, 'index.html'), convertResult.data.html);
+  fs.writeFileSync(path.join(absDir, 'styles.css'), convertResult.data.css);
+  fs.writeFileSync(path.join(absDir, 'assets-manifest.json'), JSON.stringify(convertResult.data.assetsManifest, null, 2));
+  console.error('[convert-to-html] Generated index.html + styles.css');
+
+  // 3. Download Assets
+  console.error('\n--- Step 3: Download Assets ---');
+  const { run: runDownload } = require('./download-assets.js');
+  const downloadResult = await runDownload(absDir);
+
+  // 4. Inject IDs
+  console.error('\n--- Step 4: Inject Element IDs ---');
+  const { run: runInject } = require('./inject-ids.js');
+  const injectResult = runInject(absDir);
+
+  console.error('\n=== Postprocess complete ===\n');
+
+  return success({
+    steps: {
+      parse: { nodeCount: parseResult.data.meta.nodeCount, imageCount: parseResult.data.meta.imageCount },
+      convert: { htmlPath: path.join(absDir, 'index.html'), cssPath: path.join(absDir, 'styles.css') },
+      download: downloadResult.ok ? downloadResult.data : { downloaded: 0, failed: 0, files: [] },
+      inject: injectResult.ok ? injectResult.data : { count: 0 },
+    },
+    files: fs.readdirSync(absDir).filter(f => !f.startsWith('.')),
+    warnings: [
+      ...(parseResult.warnings || []),
+      ...(convertResult.warnings || []),
+      ...(downloadResult.warnings || []),
+      ...(injectResult.warnings || []),
+    ],
+  });
 }
 
 if (require.main === module) {
   const outputDir = process.argv[2];
   if (!outputDir) {
-    console.error('Usage: node tools/postprocess.js <outputDir>');
-    console.error('Example: node tools/postprocess.js output/');
+    printResult(fail('Usage: node tools/postprocess.js <outputDir>', 'USAGE'));
     process.exit(1);
   }
-
   if (!fs.existsSync(outputDir)) {
-    console.error(`[postprocess] Directory not found: ${outputDir}`);
+    printResult(fail(`디렉토리 없음: ${outputDir}`, 'DIR_NOT_FOUND'));
     process.exit(1);
   }
-
-  postprocess(outputDir).catch(err => {
-    console.error('[postprocess] Fatal error:', err);
+  postprocess(outputDir).then(result => {
+    printResult(result);
+    if (!result.ok) process.exit(1);
+  }).catch(err => {
+    printResult(fail(`Fatal error: ${err.message}`, 'FATAL'));
     process.exit(1);
   });
 }
