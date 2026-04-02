@@ -32,8 +32,19 @@ async function postprocess(outputDir) {
   const { run: runInject } = require('./inject-ids.js');
   runInject(absDir);
 
+  // 6. Validate (MCP 원본 대비 검증 — .mcp-source.jsx가 있을 때만)
+  let validation = null;
+  const mcpSource = path.join(absDir, '.mcp-source.jsx');
+  if (fs.existsSync(mcpSource)) {
+    console.log('\n--- Step 6: Validate (MCP vs Rendered) ---');
+    console.log('[postprocess] validate는 별도 실행: node tools/validate.js output/ http://localhost:3100');
+    console.log('[postprocess] 프리뷰 서버가 실행 중이어야 합니다.');
+  } else {
+    console.log('\n--- Step 6: Validate (skipped — .mcp-source.jsx 없음) ---');
+  }
+
   console.log('\n=== Postprocess complete ===\n');
-  return { warnings };
+  return { warnings, validation };
 }
 
 if (require.main === module) {
