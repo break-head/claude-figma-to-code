@@ -5,5 +5,20 @@
   "author": {
     "name": "leejuhwan"
   },
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "mcpServers": {
+    "figma": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/figma-mcp-server"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "${user_config.figma_token}"
+      }
+    }
+  },
+  "userConfig": {
+    "figma_token": {
+      "description": "Figma Personal Access Token (https://www.figma.com/developers/api#access-tokens)",
+      "sensitive": true
+    }
+  }
 }
