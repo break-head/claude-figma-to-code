@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { parseMcpSource, inferAlignment } = require('./parse-mcp.js');
 const { extractStyles, rgbToHex } = require('./extract-styles.js');
+const { success, fail: jsonFail, printResult } = require('./json-output.js');
 
 // ── 비교 규칙 ──
 
@@ -189,25 +190,25 @@ async function validate(outputDir, previewUrl = 'http://localhost:3100') {
   if (!fs.existsSync(mcpPath)) {
     console.error(`[validate] MCP 소스 없음: ${mcpPath}`);
     console.error('[validate] 먼저 get_design_context 결과를 output/.mcp-source.jsx에 저장하세요.');
-    return { pass: 0, warn: 0, fail: 0, issues: [] };
+    return success({ pass: 0, warn: 0, fail: 0, issues: [] }, ['MCP 소스 없음']);
   }
 
   // 1. MCP 원본에서 의도값 추출
-  console.log('[validate] MCP 원본 파싱 중...');
+  console.error('[validate] MCP 원본 파싱 중...');
   const jsx = fs.readFileSync(mcpPath, 'utf-8');
   const nodeMap = parseMcpSource(jsx);
   inferAlignment(nodeMap);
 
   // 2. 렌더된 페이지에서 실제값 추출
-  console.log('[validate] 렌더된 페이지 스타일 추출 중...');
+  console.error('[validate] 렌더된 페이지 스타일 추출 중...');
   const actualStyles = await extractStyles(previewUrl);
 
   // 3. 비교
-  console.log('[validate] 비교 중...\n');
+  console.error('[validate] 비교 중...\n');
 
   let pass = 0;
   let warn = 0;
-  let fail = 0;
+  let failCount = 0;
   const allIssues = [];
 
   const checkedNodes = Object.entries(nodeMap).filter(
@@ -222,7 +223,7 @@ async function validate(outputDir, previewUrl = 'http://localhost:3100') {
       pass++;
     } else {
       for (const issue of issues) {
-        if (issue.severity === 'error') fail++;
+        if (issue.severity === 'error') failCount++;
         else if (issue.severity === 'warning') warn++;
         else pass++; // info는 pass 취급
 
@@ -232,7 +233,7 @@ async function validate(outputDir, previewUrl = 'http://localhost:3100') {
   }
 
   // 4. 리포트 출력
-  console.log('=== Validate Report ===\n');
+  console.error('=== Validate Report ===\n');
 
   // 에러 먼저
   const errors = allIssues.filter((i) => i.severity === 'error');
@@ -240,35 +241,35 @@ async function validate(outputDir, previewUrl = 'http://localhost:3100') {
   const infos = allIssues.filter((i) => i.severity === 'info');
 
   if (errors.length > 0) {
-    console.log('🔴 ERRORS:');
+    console.error('🔴 ERRORS:');
     for (const e of errors) {
-      console.log(`  [${e.nodeId}] <${e.tagName}> ${e.property}: expected ${e.expected}, got ${e.actual}`);
-      if (e.message) console.log(`    → ${e.message}`);
+      console.error(`  [${e.nodeId}] <${e.tagName}> ${e.property}: expected ${e.expected}, got ${e.actual}`);
+      if (e.message) console.error(`    → ${e.message}`);
     }
-    console.log();
+    console.error();
   }
 
   if (warnings.length > 0) {
-    console.log('🟡 WARNINGS:');
+    console.error('🟡 WARNINGS:');
     for (const w of warnings) {
-      console.log(`  [${w.nodeId}] <${w.tagName}> ${w.property}: expected ${w.expected}, got ${w.actual}`);
+      console.error(`  [${w.nodeId}] <${w.tagName}> ${w.property}: expected ${w.expected}, got ${w.actual}`);
     }
-    console.log();
+    console.error();
   }
 
   if (infos.length > 0) {
-    console.log('🔵 INFO:');
+    console.error('🔵 INFO:');
     for (const i of infos) {
-      console.log(`  [${i.nodeId}] <${i.tagName}> ${i.property}: expected ${i.expected}, got ${i.actual}`);
+      console.error(`  [${i.nodeId}] <${i.tagName}> ${i.property}: expected ${i.expected}, got ${i.actual}`);
     }
-    console.log();
+    console.error();
   }
 
   const total = checkedNodes.length;
-  console.log(`총 ${total}개 노드 검증 — ✅ ${pass} pass, 🟡 ${warn} warn, 🔴 ${fail} error`);
-  console.log();
+  console.error(`총 ${total}개 노드 검증 — ✅ ${pass} pass, 🟡 ${warn} warn, 🔴 ${failCount} error`);
+  console.error();
 
-  return { pass, warn, fail, issues: allIssues };
+  return success({ pass, warn, fail: failCount, issues: allIssues });
 }
 
 // ── CLI ──
@@ -282,8 +283,9 @@ if (require.main === module) {
   }
 
   validate(path.resolve(outputDir), previewUrl)
-    .then(({ fail }) => {
-      if (fail > 0) process.exit(1);
+    .then(result => {
+      printResult(result);
+      if (result.data && result.data.fail > 0) process.exit(1);
     })
     .catch((err) => {
       console.error('[validate] Error:', err.message);

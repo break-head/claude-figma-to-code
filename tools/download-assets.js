@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
 const http = require('node:http');
+const { success, printResult } = require('./json-output.js');
 
 function sanitizeFilename(name) {
   if (!name || name.trim() === '') return `asset-${Date.now()}`;
@@ -61,8 +62,8 @@ async function run(outputDir, concurrency = 5) {
   const items = parseManifest(manifestPath);
 
   if (items.length === 0) {
-    console.log('[download-assets] No assets to download.');
-    return { downloaded: 0, failed: 0 };
+    console.error('[download-assets] No assets to download.');
+    return success({ downloaded: 0, failed: 0, files: [] });
   }
 
   fs.mkdirSync(assetsDir, { recursive: true });
@@ -79,7 +80,7 @@ async function run(outputDir, concurrency = 5) {
       try {
         await downloadFile(item.url, destPath);
         downloaded++;
-        console.log(`  [OK] ${filename}`);
+        console.error(`  [OK] ${filename}`);
       } catch (err) {
         failed++;
         console.warn(`  [FAIL] ${filename}: ${err.message}`);
@@ -91,8 +92,8 @@ async function run(outputDir, concurrency = 5) {
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
   await Promise.all(workers);
 
-  console.log(`[download-assets] Done: ${downloaded} downloaded, ${failed} failed.`);
-  return { downloaded, failed };
+  console.error(`[download-assets] Done: ${downloaded} downloaded, ${failed} failed.`);
+  return success({ downloaded, failed, files: items.map(i => sanitizeFilename(i.filename)) });
 }
 
 if (require.main === module) {
@@ -101,7 +102,7 @@ if (require.main === module) {
     console.error('Usage: node tools/download-assets.js <outputDir>');
     process.exit(1);
   }
-  run(outputDir);
+  run(outputDir).then(printResult);
 }
 
 module.exports = { parseManifest, sanitizeFilename, downloadFile, run };

@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { success, printResult } = require('./json-output.js');
 
 async function capture({ url, outputPath, width = 1440, deviceScaleFactor = 2 }) {
   const { chromium } = require('playwright');
@@ -18,8 +19,8 @@ async function capture({ url, outputPath, width = 1440, deviceScaleFactor = 2 })
 
   await browser.close();
 
-  console.log(`[capture] Screenshot saved: ${outputPath} (${width}px @ ${deviceScaleFactor}x)`);
-  return outputPath;
+  console.error(`[capture] Screenshot saved: ${outputPath} (${width}px @ ${deviceScaleFactor}x)`);
+  return success({ path: outputPath, width });
 }
 
 if (require.main === module) {
@@ -27,10 +28,12 @@ if (require.main === module) {
   const outputPath = process.argv[3] || 'output/.preview-screenshot.png';
   const width = parseInt(process.argv[4] || '1440', 10);
 
-  capture({ url, outputPath: path.resolve(outputPath), width }).catch(err => {
-    console.error('[capture] Error:', err.message);
-    process.exit(1);
-  });
+  capture({ url, outputPath: path.resolve(outputPath), width })
+    .then(printResult)
+    .catch(err => {
+      console.error('[capture] Error:', err.message);
+      process.exit(1);
+    });
 }
 
 module.exports = { capture };

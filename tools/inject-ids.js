@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const cheerio = require('cheerio');
+const { success, printResult } = require('./json-output.js');
 
 const TARGET_TAGS = [
   'header', 'nav', 'main', 'section', 'article', 'aside', 'footer',
@@ -37,8 +38,8 @@ function run(outputDir) {
   const htmlPath = path.join(outputDir, 'index.html');
 
   if (!fs.existsSync(htmlPath)) {
-    console.warn('[inject-ids] index.html not found, skipping.');
-    return;
+    console.error('[inject-ids] index.html not found, skipping.');
+    return success({ count: 0 });
   }
 
   const html = fs.readFileSync(htmlPath, 'utf-8');
@@ -46,7 +47,8 @@ function run(outputDir) {
   fs.writeFileSync(htmlPath, result);
 
   const count = (result.match(/data-element-id="/g) || []).length;
-  console.log(`[inject-ids] Injected ${count} element IDs.`);
+  console.error(`[inject-ids] Injected ${count} element IDs.`);
+  return success({ count });
 }
 
 if (require.main === module) {
@@ -55,7 +57,7 @@ if (require.main === module) {
     console.error('Usage: node tools/inject-ids.js <outputDir>');
     process.exit(1);
   }
-  run(outputDir);
+  printResult(run(outputDir));
 }
 
 module.exports = { injectIds, TARGET_TAGS, run };
