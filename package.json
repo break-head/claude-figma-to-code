@@ -10,6 +10,7 @@
     "capture": "node tools/capture.js"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.2",
     "cheerio": "^1.2.0",
     "chokidar": "^4.0.0",
     "playwright": "^1.52.0"
