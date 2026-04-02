@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "figma-to-code",
-      "source": "./",
+      "source": ".claude-plugin/",
       "description": "Figma URL을 넣으면 HTML/CSS/JS를 생성하고 브라우저에서 실시간 수정할 수 있는 플러그인"
     }
   ]
