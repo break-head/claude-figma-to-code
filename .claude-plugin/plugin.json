@@ -5,7 +5,7 @@
   "author": {
     "name": "leejuhwan"
   },
-  "skills": "../skills/",
+  "skills": "./skills/",
   "mcpServers": {
     "figma": {
       "command": "npx",
