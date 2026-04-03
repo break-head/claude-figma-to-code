@@ -2,7 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
 const http = require('node:http');
-const { success, printResult } = require('./json-output.js');
 
 function sanitizeFilename(name) {
   if (!name || name.trim() === '') return `asset-${Date.now()}`;
@@ -16,15 +15,6 @@ function sanitizeFilename(name) {
   return (sanitized || `asset-${Date.now()}`) + ext;
 }
 
-function parseManifest(manifestPath) {
-  if (!fs.existsSync(manifestPath)) {
-    console.warn(`[download-assets] ${manifestPath} not found.`);
-    return [];
-  }
-  const data = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  return Array.isArray(data) ? data : [];
-}
-
 function downloadFile(url, destPath) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
@@ -36,11 +26,11 @@ function downloadFile(url, destPath) {
       }
       if (response.statusCode !== 200) {
         fs.unlinkSync(destPath);
-        reject(new Error(`HTTP ${response.statusCode} for ${url}`));
+        reject(new Error(`HTTP ${response.statusCode}`));
         return;
       }
       response.pipe(file);
-      file.on('finish', () => { file.close(); resolve(destPath); });
+      file.on('finish', () => { file.close(); resolve(); });
     }).on('error', (err) => {
       if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
       reject(err);
@@ -56,53 +46,54 @@ function createPlaceholder(destPath) {
   fs.writeFileSync(destPath, placeholder);
 }
 
-async function run(outputDir, concurrency = 5) {
+async function run(outputDir, concurrency = 10) {
   const manifestPath = path.join(outputDir, 'assets-manifest.json');
   const assetsDir = path.join(outputDir, 'assets');
-  const items = parseManifest(manifestPath);
 
-  if (items.length === 0) {
-    console.error('[download-assets] No assets to download.');
-    return success({ downloaded: 0, failed: 0, files: [] });
+  if (!fs.existsSync(manifestPath)) {
+    console.log('No assets-manifest.json found. Skipping.');
+    return;
+  }
+
+  const items = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  if (!Array.isArray(items) || items.length === 0) {
+    console.log('No assets to download.');
+    return;
   }
 
   fs.mkdirSync(assetsDir, { recursive: true });
 
-  let downloaded = 0;
-  let failed = 0;
+  let ok = 0, fail = 0;
   const queue = [...items];
 
   async function worker() {
     while (queue.length > 0) {
       const item = queue.shift();
       const filename = sanitizeFilename(item.filename);
-      const destPath = path.join(assetsDir, filename);
+      const dest = path.join(assetsDir, filename);
       try {
-        await downloadFile(item.url, destPath);
-        downloaded++;
-        console.error(`  [OK] ${filename}`);
+        await downloadFile(item.url, dest);
+        ok++;
+        console.log(`  OK  ${filename}`);
       } catch (err) {
-        failed++;
-        console.warn(`  [FAIL] ${filename}: ${err.message}`);
-        createPlaceholder(destPath);
+        fail++;
+        console.warn(`  FAIL ${filename}: ${err.message}`);
+        createPlaceholder(dest);
       }
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
-  await Promise.all(workers);
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
 
-  console.error(`[download-assets] Done: ${downloaded} downloaded, ${failed} failed.`);
-  return success({ downloaded, failed, files: items.map(i => sanitizeFilename(i.filename)) });
+  console.log(`Done: ${ok} downloaded, ${fail} failed`);
 }
 
 if (require.main === module) {
-  const outputDir = process.argv[2];
-  if (!outputDir) {
-    console.error('Usage: node tools/download-assets.js <outputDir>');
-    process.exit(1);
-  }
-  run(outputDir).then(printResult);
+  const dir = process.argv[2];
+  if (!dir) { console.error('Usage: node tools/download-assets.js <outputDir>'); process.exit(1); }
+  run(path.resolve(dir)).catch(err => { console.error(err); process.exit(1); });
 }
 
-module.exports = { parseManifest, sanitizeFilename, downloadFile, run };
+module.exports = { run, sanitizeFilename };
