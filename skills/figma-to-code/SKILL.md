@@ -33,9 +33,11 @@ Figma URL → MCP(스크린샷+JSX)
   → MCP 에셋 다운로드
   → 에셋 HTML 전환 분석 (이미지 vs HTML 자동 분류)
   → AI 확인 (html-table/review 에셋 Read 검증)
+  → AI 전수 이미지 감사 (모든 에셋 Read → Footer/Header/카드 등 HTML 전환)
   → 시맨틱 HTML/CSS 생성 (AI 주도, 스크린샷 기준)
   → extract-fonts (폰트 임베딩)
   → capture 검증
+  → 이미지→HTML 셀프 피드백 루프 (<img> 전수 스캔 → 누락 전환)
 ```
 
 ### 도구 (7개)
@@ -235,6 +237,34 @@ node tools/classify-html-assets.js output/{프로젝트명}/
 .data-table td { background: var(--color-white); border: 1px solid black; }
 ```
 
+#### 6-6. AI 이미지 감사 (도구 강제 + AI 확인)
+
+`classify-html-assets.js`가 자동으로 **모든 에셋을 휴리스틱 분석**하여 `ai-review-required` 리포트를 출력한다.
+AI 에이전트는 이 리포트의 **모든 항목을 Read로 확인**해야 하며, 리포트를 무시하고 완료를 선언할 수 없다.
+
+**도구가 자동 감지하는 패턴:**
+
+| 패턴 | 감지 기준 | 도구 분류 |
+|---|---|---|
+| Header/Nav | 비율 > 8:1 + 높이 < 200px | `ai-review-required` |
+| Breadcrumb/Tab | 비율 > 5:1 + 높이 < 150px | `ai-review-required` |
+| Footer | 비율 > 2.5:1 + 파일명에 "footer"/"bottom" | `ai-review-required` |
+| 카드 리스트 | 파일명에 "list"/"card"/"row"/"detail"/"review" | `ai-review-required` |
+| 단색 배경 | bytes/pixel < 0.05 + 파일 < 50KB | `css-replace` |
+
+**AI 확인 프로세스:**
+1. `⚠ AI_ACTION_REQUIRED` 리포트의 각 이미지를 Read로 열기
+2. 이미지 내용을 보고 최종 판단:
+   - 텍스트/링크/구조화 데이터 → **HTML로 변환** (카드, 리뷰, 네비게이션 등)
+   - 사진/일러스트/복합 비주얼 → `keep-image`
+   - 단색 배경 → CSS `background-color`로 대체
+3. 판단 결과를 코드 작성 시 반영
+
+**판단 원칙:**
+- 텍스트가 주요 콘텐츠인 이미지 → **반드시 HTML** (SEO, 접근성, 반응형)
+- 사진/일러스트가 주요 콘텐츠인 이미지 → `<img>` 유지
+- 애매한 경우 → HTML 우선 (이미지보다 HTML이 항상 SEO에 유리)
+
 #### 7. 시맨틱 HTML/CSS 생성 (AI 주도)
 
 **7-0. 사전 분석 (코드 작성 전 필수)**
@@ -377,6 +407,35 @@ node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{
 1. Read로 `.preview.png` 확인
 2. MCP 원본 스크린샷과 비교
 3. 차이가 있으면 Edit으로 수정 → 재캡처 (최대 2회)
+
+#### 9-1. 이미지→HTML 셀프 피드백 루프 (필수)
+
+시각적 검증 후, 생성된 HTML의 모든 `<img>` 태그를 전수 스캔하여 **HTML로 전환 가능한 이미지가 남아있는지** 자동 리뷰한다.
+
+**실행 방법:**
+1. `index.html`에서 모든 `<img>` 태그 추출
+2. 각 이미지를 Read로 열어 내용 확인
+3. 아래 체크리스트로 판단:
+
+**체크리스트:**
+- [ ] 이 이미지에 읽을 수 있는 텍스트가 50% 이상인가? → HTML 전환
+- [ ] 이 이미지에 반복 구조(카드, 리스트, 테이블)가 있는가? → HTML 전환
+- [ ] 이 이미지에 클릭 가능해야 할 링크/버튼이 보이는가? → HTML 전환
+- [ ] 이 이미지가 단색 배경인가? → CSS background-color 대체
+- [ ] 이 이미지가 네비게이션/Footer/Header인가? → HTML 전환
+
+**예외 (이미지 유지):**
+- 광고 배너 (서드파티 프로모션, 복잡한 비주얼)
+- 사진/일러스트 (사람, 풍경, 제품)
+- 복합 그래픽 (그라디언트 + 사진 + 텍스트 오버레이)
+
+**전환 발견 시:**
+1. 이미지 내용을 텍스트로 추출
+2. 시맨틱 HTML로 교체 (기존 `<img>` → `<footer>`, `<nav>`, `<article>` 등)
+3. CSS 스타일 추가
+4. 재캡처하여 시각적 확인
+
+이 단계를 거치지 않고 완료를 선언하지 않는다.
 
 #### 10. 결과 안내
 ```
