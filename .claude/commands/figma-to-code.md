@@ -1,4 +1,4 @@
-Figma URL을 받아 배포 가능한 Vanilla HTML/CSS/JS 단일 페이지를 생성하는 에이전트입니다.
+Figma URL을 받아 배포 가능한 HTML/CSS/JS + assets를 생성하는 AI 에이전트입니다.
 
 사용자 입력: $ARGUMENTS
 
@@ -16,156 +16,215 @@ $ARGUMENTS에서 Figma URL을 추출한다.
 URL이 없거나 node-id가 없으면:
 > "변환할 Figma 프레임 URL을 알려주세요. Figma에서 프레임을 선택하고 우클릭 -> 'Copy link to selection'으로 복사할 수 있습니다."
 
+**프로젝트명 결정:**
+- URL의 fileName 부분에서 추출 (하이픈/언더스코어 정리)
+- 또는 사용자가 지정한 이름 사용
+- 출력 디렉토리: `output/{프로젝트명}/`
+
 ### 2. Figma MCP로 디자인 데이터 수집
 
-1. `get_design_context`(fileKey, nodeId) 호출 -> React+Tailwind 코드 + 스크린샷
-2. 반환된 코드를 `output/.mcp-source.jsx`에 Write 도구로 저장
-3. MCP 응답 원본 데이터를 `output/.figma-data.json`에 저장
-4. 반환된 스크린샷은 대화 컨텍스트에 유지 (보정 루프 레퍼런스)
+1. `get_design_context`(fileKey, nodeId) 호출
+2. 반환 데이터:
+   - **스크린샷** — 디자인의 시각적 진실. 레이아웃, 정렬, 간격 판단의 최종 기준
+   - **React+Tailwind JSX 코드** — 데이터 소스. 텍스트 내용, 이미지 URL, 색상값, 폰트명 추출용
+   - **메타데이터** — 프레임 크기, 컴포넌트 정보
+3. 스크린샷은 대화 컨텍스트에 유지 (보정 루프 레퍼런스)
 
-### 3. 섹션 식별
+**중요: MCP 데이터가 모든 판단의 기준이다.**
+- 스크린샷 = 레이아웃/정렬/간격의 진실
+- JSX 코드 = 텍스트/색상/이미지/폰트의 진실
+- 이 둘이 충돌하면 스크린샷을 우선한다 (시각적 결과가 최종 목표)
 
-MCP 코드를 읽고 최상위 컴포넌트/섹션을 구분한다:
-- 최상위 JSX의 직접 자식 요소들을 섹션으로 식별
-- 각 섹션에 이름 부여 (hero, features, cta, footer 등)
-- 섹션 목록을 사용자에게 보여주고 확인
-  > "4개 섹션으로 나눕니다: Hero, Features, CTA, Footer -- 맞나요?"
+### 3. 타겟 확인 (사용자 컨펌 필수)
 
-### 4. 섹션별 변환
+MCP 데이터를 가져온 후, 반드시 사용자에게 질문한다:
 
-각 섹션마다 MCP의 React+Tailwind 코드를 바닐라 HTML + CSS로 변환한다.
+```
+Figma 디자인을 가져왔습니다. (프레임 크기: {width}×{height})
 
-**HTML 규칙:**
-- 시맨틱 HTML5 태그: `<header>`, `<nav>`, `<main>`, `<section>`, `<footer>`
-- BEM 스타일 클래스명: `.hero`, `.hero__title`, `.hero__cta`
-- 이미지는 `assets/` 상대경로: `<img src="assets/hero.png">`
-
-**CSS 규칙:**
-- `:root`에 디자인 토큰을 CSS 변수로 정의 (색상, 폰트, 간격)
-- 색상/폰트 하드코딩 금지 -- 반드시 CSS 변수 참조
-- Flexbox 또는 CSS Grid로 레이아웃
-- **절대 좌표 → 정렬 의도 추론 (중요):**
-  MCP 코드는 모든 요소를 `absolute` + `left/top` 픽셀 좌표로 배치한다. 바닐라 HTML로 변환할 때 이 좌표를 그대로 쓰지 말고, **레이아웃 의도를 추론하여 semantic한 CSS 정렬로 변환한다.**
-
-  **추론 방법:**
-  1. 부모 컨테이너 폭(보통 1052px = 1440px - padding 186px*2)을 기준으로 자식 요소의 `left` 값을 확인
-  2. 자식이 부모의 양쪽 여백과 대칭이면 → `justify-content: center` 또는 `margin: 0 auto`
-  3. 자식이 부모 좌측에 붙어있으면 → 기본 좌측 정렬
-  4. `text-center` 클래스가 있으면 → `text-align: center`
-  5. `-translate-x-1/2 left-[calc(50%...)]` 패턴 → 명확한 중앙 정렬
-
-  **예시:**
-  ```
-  부모 w-[1052px], 자식 left-[432px] w-[224px] + 형제 left-[708px]
-  → 자식 블록이 432~1072px 범위 = 부모 내 대칭 → 중앙 정렬
-  ```
-
-  절대 좌표를 보고 무조건 좌측 정렬로 변환하지 않는다.
-- **font-weight 보존 (중요):**
-  Figma MCP 코드에서 Bold/Regular를 별도 font-family로 구분하는 경우가 많다 (예: `font-['YouandiNewKr_Title:Bold']` vs `font-['YouandiNewKr_Title:Regular']`).
-  CSS 변수로 변환할 때 `font-family`만 바꾸면 커스텀 폰트가 없는 환경에서 fallback 폰트의 weight 구분이 안 된다.
-  **반드시 `font-weight`도 함께 지정한다:**
-  ```css
-  /* Bold 계열 */
-  font-family: var(--font-bold);
-  font-weight: 700;
-
-  /* Regular 계열 */
-  font-family: var(--font-regular);
-  font-weight: 400;
-  ```
-
-**JS:** 인터랙션이 필요할 때만 생성. Vanilla JS만 사용.
-
-**이미지:**
-- Figma에서 이미지 URL 수집 -> `output/assets-manifest.json`에 목록 작성:
-  ```json
-  [{ "url": "https://figma-image-url/...", "filename": "hero.png" }]
-  ```
-- **이미지 크롭/마스크 보존 (중요):**
-  MCP 코드에서 이미지가 컨테이너 안에서 크롭되는 패턴을 반드시 확인하고 바닐라 CSS로 변환한다.
-  Figma는 하나의 큰 이미지에서 특정 부분만 보여주기 위해 `overflow: hidden` 컨테이너 + 이미지에 퍼센트 기반 `width/height/left/top` 값을 사용한다.
-
-  **감지 패턴 (Tailwind):**
-  ```jsx
-  <div className="h-[365px] w-[243px]">        ← 컨테이너 (overflow:hidden)
-    <div className="overflow-hidden">
-      <img className="absolute h-[276.42%] left-[-493.07%] w-[652.38%] top-[-39.22%]" />
-    </div>
-  </div>
-  ```
-
-  **변환 결과 (Vanilla CSS):**
-  ```css
-  .person-crop {
-    width: 243px;
-    height: 365px;
-    overflow: hidden;
-    position: relative;
-  }
-  .person-crop img {
-    position: absolute;
-    max-width: none;
-    width: 652.38%;
-    height: 276.42%;
-    left: -493.07%;
-    top: -39.22%;
-  }
-  ```
-
-  이 패턴은 스프라이트 시트에서 특정 캐릭터를 크롭하거나, 큰 사진에서 특정 영역만 보여줄 때 사용된다. `object-fit: cover`로 대체하면 안 된다 — 원본 좌표를 그대로 옮겨야 한다.
-
-  마찬가지로 `mask-image`, `mask-size`, `mask-position` 등 마스크 속성도 MCP 코드에서 그대로 가져온다.
-
-**저장:**
-- `output/sections/01-hero.html` + `output/sections/01-hero.css`
-- `output/sections/02-features.html` + `output/sections/02-features.css`
-- 번호 순서 = 페이지 내 배치 순서
-
-### 5. 후처리 파이프라인
-
-```bash
-node tools/postprocess.js output/
+이 디자인의 타겟은 무엇인가요?
+1. 데스크탑
+2. 모바일
+3. 반응형 (모바일 프레임 URL 추가 입력)
 ```
 
-자동 수행: 섹션 합침 -> 토큰 추출 -> CSS 정규화 -> 이미지 다운로드 -> ID 삽입
+**사용자 응답에 따른 분기:**
 
-### 6. 시각적 보정 루프
+| 선택 | 동작 |
+|---|---|
+| **1. 데스크탑** | 데스크탑 레이아웃으로 진행. `max-width: {프레임너비}px`, `margin: 0 auto` |
+| **2. 모바일** | 모바일 레이아웃으로 진행. `max-width: 480px`, `margin: 0 auto` |
+| **3. 반응형** | 모바일 프레임 URL을 추가로 입력받고, 두 번째 MCP 호출 후 반응형 생성 |
 
-1. 프리뷰 서버 기동:
+**중요: 프레임 픽셀 크기로 자동 판단하지 않는다.** 1440px 프레임이 모바일 디자인일 수도, 375px 프레임이 데스크탑 디자인일 수도 있다. 반드시 사용자가 선택한다.
+
+### 4. 기계 변환 (도구 사용)
+
+MCP JSX 코드를 `output/{프로젝트명}/source.jsx`에 Write로 저장한 후, 도구로 기계 변환한다.
+
+#### 단일 타겟 (데스크탑 또는 모바일)
+
 ```bash
-node tools/preview-server.js output/ &
+# JSX → HTML 변환
+node tools/jsx-to-html.js output/{프로젝트명}/source.jsx output/{프로젝트명}/index.html --wrap
+
+# Tailwind → CSS 추출
+node tools/tailwind-to-css.js output/{프로젝트명}/index.html output/{프로젝트명}/styles.css
 ```
 
-2. 스크린샷 캡처:
+#### 반응형 (두 프레임)
+
 ```bash
-node tools/capture.js http://localhost:3100 output/.preview-screenshot.png
+# 데스크탑 JSX → HTML
+node tools/jsx-to-html.js output/{프로젝트명}/source.jsx output/{프로젝트명}/index.html --wrap
+
+# 모바일 JSX → HTML (참조용)
+node tools/jsx-to-html.js output/{프로젝트명}/source-mobile.jsx output/{프로젝트명}/mobile-ref.html --wrap
+
+# 데스크탑 기준 CSS 추출
+node tools/tailwind-to-css.js output/{프로젝트명}/index.html output/{프로젝트명}/styles.css
 ```
 
-3. Read 도구로 `output/.preview-screenshot.png`을 읽어서 Figma 원본 스크린샷과 비교
-4. 차이가 있으면 해당 섹션 파일 수정 -> postprocess 재실행 -> 재캡처 -> 재비교
-5. **최대 2회 반복**. 2회 후에도 차이가 있으면 남은 차이점을 사용자에게 리포트
+### 5. AI 검수/보정
 
-### 7. 결과 안내
+기계 변환 결과를 Read로 읽고 검수한다. **전체 재작성 금지. 누락/오류만 수정한다.**
+
+#### 공통 검수 항목
+
+- **구조**: 스크린샷과 HTML 구조가 일치하는가?
+- **텍스트**: MCP JSX의 텍스트가 정확히 반영되었는가?
+- **이미지**: `assets-manifest.json` 생성. 이미지 경로를 `assets/{filename}`으로 매핑
+- **스타일 보완**: absolute 좌표를 flexbox/grid로 대체, 색상 변수화, 폰트 정리
+
+#### 타겟별 레이아웃 보정
+
+**데스크탑:**
+- 루트에 `max-width: {프레임너비}px`, `margin: 0 auto` 적용
+- 스크린샷 기준으로 flexbox/grid 레이아웃 정리
+
+**모바일:**
+- 루트에 `max-width: 480px`, `margin: 0 auto` 적용
+- 스크린샷 기준으로 세로 스택 레이아웃 정리
+
+**반응형:**
+1. 데스크탑 HTML을 기본 구조로 사용
+2. 모바일 참조 HTML(`mobile-ref.html`)과 스크린샷을 비교하여 차이점 파악
+3. 데스크탑 CSS를 기본으로 하고, `@media (max-width: 768px)`로 모바일 오버라이드 추가
+4. 공통 HTML 구조 통합 (모바일에서만 보이는 요소는 `display: none` ↔ `display: block` 전환)
+5. 완료 후 `mobile-ref.html` 삭제
+
+#### CSS 생성 규칙
+
+```css
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Design Tokens */
+:root {
+  /* Colors - MCP JSX의 hex 값에서 추출 */
+  --color-primary: #...;
+  --color-bg: #...;
+
+  /* Fonts - MCP JSX의 font-family에서 추출 */
+  --font-heading: '...', sans-serif;
+  --font-body: '...', sans-serif;
+
+  /* Spacing - 스크린샷에서 관찰된 간격 패턴 */
+  --space-sm: ...px;
+  --space-md: ...px;
+  --space-lg: ...px;
+}
+```
+
+- **색상**: 모든 색상은 `:root` 변수로 정의하고 `var()`로 참조. 하드코딩 금지
+- **폰트**: CSS 변수로 정의. **font-weight를 반드시 명시적으로 지정**
+- **레이아웃**: Flexbox 또는 CSS Grid. **절대좌표(position: absolute) 사용 금지**
+  - MCP JSX의 `absolute`, `left-[px]`, `top-[px]`를 그대로 옮기지 않는다. 스크린샷을 보고 의도를 추론한다
+- **이미지 크롭/마스크**: MCP JSX의 퍼센트 기반 크롭 패턴은 그대로 vanilla CSS로 변환 (`object-fit: cover`로 대체 금지)
+
+#### 이미지 처리 규칙
+
+MCP JSX에서 모든 `<img>` 태그의 src URL을 추출하여 `assets-manifest.json`을 생성:
+
+```json
+[
+  { "url": "https://figma-alpha-api.s3...", "filename": "hero-image.png" },
+  { "url": "https://figma-alpha-api.s3...", "filename": "logo.svg" }
+]
+```
+
+- filename은 의미 있는 이름으로 지정 (hero-image, team-photo-1, logo 등)
+- HTML에서는 `assets/{filename}`으로 참조
+
+#### JS 생성 규칙
+
+- 인터랙션이 필요할 때만 `script.js` 생성
+- Vanilla JS만 사용. 프레임워크/라이브러리 없음
+- index.html 하단에 `<script src="script.js"></script>` 추가
+
+### 6. 에셋 다운로드
+
+```bash
+node tools/download-assets.js output/{프로젝트명}/
+```
+
+### 7. 시각적 검증 루프
+
+#### 단일 타겟
+
+1. 캡처:
+```bash
+# 데스크탑: 프레임 너비로 캡처
+node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{프로젝트명}/.preview.png {프레임너비}
+
+# 모바일: 480px로 캡처
+node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{프로젝트명}/.preview.png 480
+```
+
+2. Read로 `.preview.png` 확인
+3. MCP 원본 스크린샷과 비교
+4. 차이가 있으면 Edit으로 수정 → 재캡처 (최대 2회)
+
+#### 반응형
+
+1. 데스크탑 캡처:
+```bash
+node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{프로젝트명}/.preview-desktop.png {데스크탑프레임너비}
+```
+
+2. 모바일 캡처:
+```bash
+node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{프로젝트명}/.preview-mobile.png 480
+```
+
+3. 각각 원본 스크린샷과 비교 → 수정 → 재캡처 (최대 2회)
+
+### 8. 결과 안내
 
 ```
 변환 완료!
 
-output/index.html -- 메인 HTML
-output/styles.css -- 스타일시트
-output/assets/    -- 이미지 에셋
-
-프리뷰: http://localhost:3100
+output/{프로젝트명}/index.html  — 메인 HTML
+output/{프로젝트명}/styles.css  — 스타일시트
+output/{프로젝트명}/assets/     — 이미지 에셋
 
 수정하려면 이 대화에서 바로 요청하세요:
-  "히어로 섹션 배경색을 파란색으로 바꿔줘"
-  "버튼 텍스트를 '무료 시작'으로 변경해줘"
+  "배경색을 파란색으로 바꿔줘"
+  "버튼 텍스트를 '시작하기'로 변경해줘"
 ```
 
 ## 수정 워크플로우
 
 사용자가 수정을 요청하면:
-1. `output/` 폴더의 해당 파일을 Read로 읽는다
+1. `output/{프로젝트명}/` 폴더의 해당 파일을 Read로 읽는다
 2. 정확한 위치를 찾아 Edit으로 수정한다
 3. CSS 변수 체계를 유지한다 (색상 변경 시 `:root` 변수를 수정)
-4. preview-server가 자동으로 브라우저에 반영한다
+
+## 핵심 원칙
+
+1. **MCP 데이터가 기준**: 모든 판단은 MCP가 반환한 스크린샷과 JSX 코드를 기준으로 한다
+2. **사용자 컨펌 필수**: 타겟(데스크탑/모바일/반응형)은 반드시 사용자가 선택한다. 프레임 크기로 자동 판단하지 않는다
+3. **기계 변환 우선**: jsx-to-html, tailwind-to-css 도구가 1차 변환. AI는 검수/보정만 담당
+4. **AI는 검수자**: 변환 결과의 누락/오류만 수정. 전체 재작성 금지
+5. **스크린샷이 시각적 진실**: 레이아웃/정렬/간격은 스크린샷을 보고 판단. JSX의 absolute 좌표를 맹목적으로 따르지 않는다
+6. **JSX가 데이터 진실**: 텍스트 내용, 색상 hex, 이미지 URL, 폰트명은 JSX에서 정확히 추출한다
