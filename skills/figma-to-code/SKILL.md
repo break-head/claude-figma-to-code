@@ -99,6 +99,8 @@ node tools/classify-nodes.js output/{프로젝트명}/source.jsx
 
 **핵심**: 개별 이미지 조각을 CSS로 겹쳐 재구성 절대 금지 — 복합 비주얼은 반드시 REST API로 단일 이미지 내보내기.
 
+**인터랙션 요소 주의:** 복합 그룹에 버튼, 입력 필드, 링크 등 인터랙션 요소가 포함되어 있으면 해당 노드 전체를 이미지로 내보내지 않는다. 상세 분류 기준은 **Step 7-0 사전 분석** 참조.
+
 #### 5. Figma REST API로 래스터 내보내기
 
 Step 4에서 식별한 복합 그룹 / 플레이스홀더 노드를 `export-nodes.js`로 내보낸다.
@@ -167,7 +169,65 @@ node tools/download-assets.js output/{프로젝트명}/
 `download-assets.js` 경고에서 `placeholder: true`인 에셋이 있으면:
 → 해당 노드를 `export-nodes.js`로 추가 내보내기
 
+**6-4. 문제 에셋 필터링**
+`download-assets.js` 경고를 반드시 확인하고, 아래 에셋은 **HTML에 포함하지 않는다:**
+
+| 경고 유형 | 원인 | 조치 |
+|---|---|---|
+| `파일이 너무 작음` (<1KB) | Figma의 미세 장식 요소 (점선, 그림자 조각) | HTML 제외 — 브라우저에서 의도치 않은 도형(마름모, 사다리꼴)으로 렌더링됨 |
+| `stroke-only SVG (빈 프레임)` | 플레이스홀더 프레임 | Step 6-3에서 REST API 내보내기로 대체 |
+
+이 규칙을 무시하면 의미 없는 SVG 파라렐로그램이 쿠폰/카드 아래에 표시되는 시각 아티팩트가 발생한다.
+
 #### 7. 시맨틱 HTML/CSS 생성 (AI 주도)
+
+**7-0. 사전 분석 (코드 작성 전 필수)**
+
+HTML을 작성하기 전에, MCP 스크린샷 + JSX를 분석하여 **모든 요소를 분류하는 설계 계획**을 세운다.
+코드를 바로 작성하지 않고, 아래 분류표를 먼저 작성한다:
+
+```
+섹션: {섹션명}
+├── [static-visual]  봉투 이미지 → assets/봉투-구독권.png (REST API 내보내기)
+├── [text-content]   "초대 친구가 가입 시" → <h2>
+├── [interactive]    "초대코드를 입력해주세요" → <input> + JS
+├── [interactive]    "저장" 버튼 → <button> + JS
+├── [decoration]     동전 이미지 → .page 레벨 absolute, opacity:0.45, blur:2.5px
+├── [link]           "내 초대로 가입한 친구" → <a>
+└── [exclude]        coupon-line.svg (542B, 너무 작음) → HTML 제외
+```
+
+**분류 기준:**
+
+| 분류 | 감지 기준 | HTML 구현 |
+|---|---|---|
+| `text-content` | 제목, 본문, 설명, 유의사항 등 읽을 수 있는 텍스트 | `<h1>`~`<h3>`, `<p>`, `<span>` |
+| `interactive` | 입력 필드, 버튼, 공유 기능, 폼, 복사 기능 | `<input>`, `<button>`, `<a>` + `script.js` |
+| `static-visual` | 사진, 일러스트, 복합 이미지 (텍스트/인터랙션 없음) | `<img>` (REST API 또는 MCP 에셋) |
+| `decoration` | pointer-events-none, opacity, blur, 배경 장식 | `.page` 레벨 absolute |
+| `link` | 밑줄 텍스트, 클릭 유도 텍스트 | `<a href>` |
+| `exclude` | download-assets 경고 에셋 (<1KB, stroke-only) | HTML에서 제외 |
+
+**인터랙션 요소 세부 판단:**
+
+JSX에서 다음 패턴이 보이면 반드시 HTML + JS로 구현한다:
+- 입력 필드: placeholder 텍스트 ("입력해주세요", "입력하세요"), 테두리 있는 사각형 + 텍스트
+- 버튼: 색상 배경(`bg-[#002c5f]` 등) + 액션 텍스트 ("저장", "로그인", "확인", "복사")
+- 공유 기능: 카카오톡/메세지/초대코드 아이콘 + 라벨 조합
+- 링크: underline 텍스트, "가입한 친구" 등 클릭 유도 표현
+- 폼 구조: 라벨 + 입력 + 버튼이 그룹으로 묶인 카드
+
+**인터랙션이 포함된 복합 노드 처리:**
+REST API 내보내기 대상에 인터랙션 요소가 포함되어 있으면:
+1. 배경/비주얼만 이미지로 내보내고, 인터랙션 레이어는 HTML로 오버레이
+2. 배경이 단순하면 (단색 카드, 라운드 박스) 전부 HTML/CSS로 구현
+3. `script.js`에 인터랙션 로직 작성 (복사, 공유, 폼 제출 등)
+
+```
+❌ 폼이 포함된 스텝 카드 전체를 이미지로 내보내기
+✅ 폰 스크린만 이미지 → 폼/버튼은 HTML로 구현
+✅ 배경이 단순 라운드 카드면 전부 HTML/CSS + JS
+```
 
 **참조 데이터를 토대로 AI가 시맨틱 HTML과 CSS를 작성한다.**
 
@@ -175,6 +235,7 @@ node tools/download-assets.js output/{프로젝트명}/
 - MCP 스크린샷 (시각적 진실)
 - MCP JSX (데이터: 텍스트, 색상, 폰트, 간격)
 - `jsx-to-html.js` / `tailwind-to-css.js` 결과 (구조 참조, 그대로 사용하지 않음)
+- Step 7-0 사전 분석 결과 (요소 분류표)
 
 **CSS 생성 규칙:**
 ```css
@@ -195,6 +256,31 @@ node tools/download-assets.js output/{프로젝트명}/
 - 스크린샷을 보고 레이아웃 의도를 추론
 - 복합 이미지 그룹 → 단일 `<img>` 태그 (Step 5에서 내보낸 이미지)
 - 장식 요소는 `overflow: hidden` 컨테이너 안에서만 absolute 허용
+
+**장식 요소(decoration) 배치 규칙:**
+장식 요소(`pointer-events-none`, `opacity`, `blur` 등)는 섹션 내부가 아닌 **페이지 루트(`.page`) 레벨에 배치**한다.
+- MCP JSX의 `top`/`left` 절대좌표를 타겟 뷰포트 비율로 환산: `위치 × (타겟너비 / 원본프레임너비)`
+- `transform: rotate()`, `opacity`, `filter: blur()` 값은 JSX에서 그대로 가져온다
+- 장식 요소를 섹션 안에 넣으면 섹션의 `overflow: hidden`에 잘려 원본과 다르게 보인다
+
+```html
+<!-- ✅ 올바른 배치: .page 직속 자식 -->
+<div class="page">
+  <div class="coin-deco coin-deco--1" aria-hidden="true">...</div>
+  <section class="hero">...</section>
+</div>
+
+<!-- ❌ 잘못된 배치: 섹션 내부 -->
+<section class="hero">
+  <div class="coin-deco">...</div>  <!-- overflow:hidden에 잘림 -->
+</section>
+```
+
+**겹침 요소(overlap) DOM 순서 규칙:**
+여러 비주얼 요소가 겹치는 레이아웃(예: 차량이 봉투 위에 겹침)은 **스크린샷의 시각적 순서**를 기준으로 DOM 순서를 결정한다:
+1. JSX에서 각 요소의 `top` 좌표를 확인
+2. 시각적으로 위→아래 순서로 DOM을 배치
+3. `z-index`로 겹침 순서를 제어 (앞에 보이는 요소가 높은 z-index)
 
 **타겟별 레이아웃:**
 
