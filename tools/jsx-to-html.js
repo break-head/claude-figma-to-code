@@ -68,15 +68,34 @@ function convertInlineStyles(html) {
 }
 
 /**
+ * Extract top-level const declarations (image URLs, strings).
+ * const img3 = "https://..." → { img3: "https://..." }
+ */
+function extractConstants(code) {
+  const constants = {};
+  const re = /const\s+(\w+)\s*=\s*["']([^"']+)["']\s*;?/g;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    constants[m[1]] = m[2];
+  }
+  return constants;
+}
+
+/**
  * Mechanically convert React JSX string to vanilla HTML.
  */
 function jsxToHtml(jsxCode) {
+  // 1. Extract constants (image URLs etc.) before removing them
+  const constants = extractConstants(jsxCode);
+
   let html = jsxCode;
 
   // Remove import/export statements
   html = html.replace(/^import\s+.*$/gm, '');
   html = html.replace(/^export\s+(default\s+)?.*function\s+\w+\s*\([^)]*\)\s*\{/gm, '');
   html = html.replace(/^export\s+default\s+\w+\s*;?\s*$/gm, '');
+  // Remove const declarations (already extracted)
+  html = html.replace(/^const\s+\w+\s*=\s*["'][^"']*["']\s*;?\s*$/gm, '');
 
   // Extract JSX body from component wrapper
   html = extractJsxBody(html);
@@ -98,8 +117,16 @@ function jsxToHtml(jsxCode) {
   // Convert inline style objects
   html = convertInlineStyles(html);
 
-  // Remove simple JSX expressions: {variableName} → empty
-  // But keep string literals: {'text'} → text
+  // Resolve JSX variable references to their constant values
+  // src={img3} → src="https://..."
+  html = html.replace(/=\{(\w+)\}/g, (_match, varName) => {
+    if (constants[varName] !== undefined) {
+      return `="${constants[varName]}"`;
+    }
+    return `=""`;
+  });
+
+  // Keep string literals: {'text'} → text, {`text`} → text
   html = html.replace(/\{['"]([^'"]*)['"]\}/g, '$1');
   html = html.replace(/\{`([^`]*)`\}/g, '$1');
 
