@@ -1,18 +1,17 @@
 {
-  "name": "figma-to-code-tools",
-  "version": "0.2.0",
+  "name": "figma-to-code",
+  "version": "1.0.0",
   "private": true,
-  "description": "Figma-to-Code v2 pipeline tools",
+  "description": "Figma-to-Code AI agent: converts Figma designs to HTML/CSS/JS",
   "scripts": {
-    "test": "node --test tools/__tests__/*.test.js",
-    "postprocess": "node tools/postprocess.js",
-    "preview": "node tools/preview-server.js",
+    "jsx-to-html": "node tools/jsx-to-html.js",
+    "tailwind-to-css": "node tools/tailwind-to-css.js",
+    "download": "node tools/download-assets.js",
     "capture": "node tools/capture.js"
   },
   "dependencies": {
-    "@babel/parser": "^7.29.2",
-    "cheerio": "^1.2.0",
-    "chokidar": "^4.0.0",
-    "playwright": "^1.52.0"
+    "@tailwindcss/cli": "^4.1.0",
+    "playwright": "^1.52.0",
+    "tailwindcss": "^4.1.0"
   }
 }
