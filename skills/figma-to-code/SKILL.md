@@ -40,8 +40,9 @@ Figma URL → MCP(스크린샷+JSX)
 ### 실행 순서
 
 1. **MCP 호출**: `get_design_context`로 JSX 코드 + 스크린샷 획득
-2. **타겟 확인**: 프레임 크기 표시 후 사용자에게 데스크탑/모바일/반응형 선택 요청
-3. **JSX 저장**: MCP 코드를 `output/{프로젝트명}/source.jsx`에 Write
+2. **프로젝트명 확인 (필수)**: 사용자에게 프로젝트명을 반드시 입력받는다. URL의 fileName을 기본값으로 제안하되, 사용자가 원하는 이름을 우선한다. 결과물은 `output/{프로젝트명}/`에 저장된다.
+3. **타겟 확인**: 프레임 크기 표시 후 사용자에게 데스크탑/모바일/반응형 선택 요청
+4. **JSX 저장**: MCP 코드를 `output/{프로젝트명}/source.jsx`에 Write
 4. **기계 변환**: `node tools/jsx-to-html.js output/{프로젝트명}/source.jsx output/{프로젝트명}/index.html --wrap`
 5. **CSS 추출**: `node tools/tailwind-to-css.js output/{프로젝트명}/index.html output/{프로젝트명}/styles.css`
 6. **AI 검수/보정**: 변환 결과를 읽고, 타겟에 맞게 레이아웃 보정·누락 보완·이미지 경로 매핑
@@ -65,6 +66,72 @@ Figma URL → MCP(스크린샷+JSX)
 3. **기계 변환 우선** — JSX→HTML, Tailwind→CSS는 도구가 처리, AI는 재작성하지 않음
 4. **AI는 검수자** — 변환 결과의 누락/오류만 수정, 전체 코드를 새로 쓰지 않음
 5. **스크린샷이 시각적 진실** — 레이아웃/정렬은 스크린샷을 보고 판단
+
+### 에셋 처리 주의사항
+
+`download-assets.js`는 자동으로 처리하지만, AI 검수 시 추가 확인이 필요하다:
+
+#### 1. 매니페스트에 에셋 역할 태깅 (AI 필수)
+assets-manifest.json 생성 시, MCP JSX의 컨텍스트를 보고 각 에셋의 **역할(role)**을 반드시 태깅한다:
+
+```json
+[
+  {
+    "url": "https://...",
+    "filename": "coin-decoration.png",
+    "role": "decoration",
+    "layer": "background",
+    "cssHint": "position:absolute; z-index:0; pointer-events:none; opacity:0.5"
+  },
+  {
+    "url": "https://...",
+    "filename": "tucson-car.png",
+    "role": "content",
+    "layer": "foreground"
+  },
+  {
+    "url": "https://...",
+    "filename": "coupon-bg.png",
+    "role": "background",
+    "layer": "mid"
+  }
+]
+```
+
+**JSX 힌트 → role 매핑:**
+
+| JSX 힌트 | role | layer | CSS 처리 |
+|---|---|---|---|
+| `pointer-events-none` + `opacity` + `blur` | `decoration` | `background` | `z-index:0`, absolute, overflow:hidden |
+| `pointer-events-none` + `absolute` | `decoration` | `background` | `z-index:0~1`, 유출 방지 |
+| 쿠폰/봉투/카드 배경 이미지 | `background` | `mid` | `z-index:1`, relative |
+| 차량/제품/아이콘 등 핵심 시각 | `content` | `foreground` | `z-index:1`, 일반 플로우 |
+| 텍스트/버튼/입력 | `interactive` | `foreground` | `z-index:2+` |
+
+**핵심**: `decoration` 에셋은 반드시 콘텐츠 **뒤에** 배치. 컨테이너에 `overflow:hidden`으로 유출 방지. 콘텐츠 영역은 `position:relative; z-index:1`로 장식보다 위에.
+
+#### 2. SVG 에셋과 aspect-ratio
+Figma MCP는 벡터 요소를 SVG로 반환. SVG는 `width="100%" height="100%"`이므로 **컨테이너에 `aspect-ratio` 필수**:
+- `download-assets.js`가 SVG viewBox를 파싱하여 매니페스트에 `aspectRatio`, `width`, `height`를 자동 추가
+- AI 검수 시 매니페스트의 `aspectRatio` 값을 CSS에 적용:
+```css
+/* 매니페스트: "aspectRatio": "699/322" */
+.coupon-img { aspect-ratio: 699/322; }
+```
+
+#### 3. 플레이스홀더 에셋 감지 및 대체
+`download-assets.js`가 자동으로 감지하는 플레이스홀더 에셋 (`placeholder: true`):
+- 빈 SVG 프레임 (stroke-only, fill 없음)
+- 1KB 미만의 비정상 파일
+- **대응**: 해당 UI를 HTML/CSS로 직접 구현하거나, `get_screenshot`으로 래스터 이미지 캡처
+
+#### 4. 에셋 다운로드 후 자동 처리 (download-assets.js)
+- 파일 타입 감지 → 확장자 자동 보정 (.png→.svg 등)
+- SVG viewBox 파싱 → 매니페스트에 `aspectRatio`, `width`, `height` 추가
+- 플레이스홀더 SVG 감지 (stroke-only) → `placeholder: true` 플래그
+- 매니페스트 항상 업데이트 (메타데이터 포함)
+- HTML 파일의 이미지 참조 항상 동기화
+- 비정상 파일 경고 출력
 
 ### 출력 구조
 
