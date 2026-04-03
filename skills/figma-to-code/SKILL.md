@@ -30,8 +30,10 @@ Figma URL → MCP(스크린샷+JSX)
   → 타겟 확인 (데스크탑/모바일/반응형)
   → AI 디자인 분석 (섹션 구조 + 에셋 전략)
   → 복합 노드 래스터 내보내기 (Figma REST API)
-  → 시맨틱 HTML/CSS 생성 (AI 주도, 스크린샷 기준)
   → MCP 에셋 다운로드
+  → 에셋 HTML 전환 분석 (이미지 vs HTML 자동 분류)
+  → AI 확인 (html-table/review 에셋 Read 검증)
+  → 시맨틱 HTML/CSS 생성 (AI 주도, 스크린샷 기준)
   → extract-fonts (폰트 임베딩)
   → capture 검증
 ```
@@ -43,6 +45,7 @@ Figma URL → MCP(스크린샷+JSX)
 | `tools/classify-nodes.js` | MCP JSX 자동 분석 → 에셋 전략 분류 (asset-plan.json) | 즉시 |
 | `tools/export-nodes.js` | Figma REST API로 노드를 래스터 PNG 내보내기 | 수초 |
 | `tools/download-assets.js` | assets-manifest.json의 이미지를 병렬 다운로드 | 수초 |
+| `tools/classify-html-assets.js` | 다운로드된 에셋 중 HTML 전환 대상 분류 (asset-html-plan.json) | 즉시 |
 | `tools/extract-fonts.js` | 시스템/Google Fonts 폰트 탐색 → woff2/woff 변환 및 임베딩 | ~10초 |
 | `tools/jsx-to-html.js` | MCP JSX → HTML 기계 변환 (참조용) | 즉시 |
 | `tools/tailwind-to-css.js` | HTML 내 Tailwind 클래스 → 실제 CSS 추출 (참조용) | ~20ms |
@@ -179,6 +182,59 @@ node tools/download-assets.js output/{프로젝트명}/
 
 이 규칙을 무시하면 의미 없는 SVG 파라렐로그램이 쿠폰/카드 아래에 표시되는 시각 아티팩트가 발생한다.
 
+#### 6-5. 에셋 → HTML 전환 분석
+
+Figma에서 이미지로 제공되지만, 실제로는 HTML로 구현해야 하는 에셋을 식별한다.
+테이블, 텍스트 리스트 등 **구조화된 데이터**가 이미지에 포함되어 있으면 `<img>` 대신 HTML `<table>`, `<ul>` 등으로 변환해야 한다.
+
+**왜 중요한가:**
+- 이미지 테이블은 확대 시 흐려지고, 반응형에서 깨진다
+- 텍스트가 선택/검색 불가 → 접근성 위반
+- HTML 테이블은 모든 해상도에서 선명하고 반응형 대응 가능
+
+**자동 분석 도구:**
+```bash
+node tools/classify-html-assets.js output/{프로젝트명}/
+```
+
+도구가 자동으로 각 에셋을 분류:
+- `html-table` — 격자 구조 + 텍스트 데이터 → `<table>`로 변환
+- `html-content` — 텍스트 위주 콘텐츠 → HTML 요소로 변환
+- `keep-image` — 사진/일러스트/복합 비주얼 → `<img>` 유지
+- `review` — 판단 불가 → AI가 직접 Read로 확인
+
+출력: `output/{프로젝트명}/asset-html-plan.json`
+
+**AI 확인 (필수):**
+1. `html-table`/`html-content`로 분류된 에셋을 Read로 직접 확인
+2. 이미지 내용(텍스트, 수치, 표 구조)을 파악하여 HTML 테이블 데이터를 추출
+3. `review`로 분류된 에셋은 반드시 직접 확인
+
+**분류 기준 (AI 판단 가이드):**
+
+| 분류 | 이미지 특징 | HTML 구현 |
+|---|---|---|
+| `html-table` | 격자선 + 행/열 구조 + 텍스트 데이터 (가격, 비율, 수치 등) | `<table>` with dark header, white body |
+| `html-content` | 글머리 기호 리스트 + 텍스트 나열 (혜택, 사용처 등) | `<ul>` or `<dl>` |
+| `keep-image` | 사진, 일러스트, 아이콘, 그라디언트, 복합 비주얼 | `<img>` |
+
+**예시:**
+```
+✅ html-table:  "종류 | 소득공제율 | 신용카드 15% | 체크카드 30%"
+✅ html-table:  "이용금액 | M포인트 적립률 | 유의사항"
+✅ html-content: "구분 | 상세 내용 | • 주유/정비 • 외식 ..."
+❌ keep-image:  연말정산 일러스트 (사람, 동전, 계산기)
+❌ keep-image:  카드 실물 사진 (현대카드M HYBRID)
+❌ keep-image:  True/False 말풍선 3D 일러스트
+```
+
+**HTML 변환 스타일 규칙:**
+변환된 테이블은 아래 CSS 패턴을 사용:
+```css
+.data-table th { background: var(--color-black); color: white; }
+.data-table td { background: var(--color-white); border: 1px solid black; }
+```
+
 #### 7. 시맨틱 HTML/CSS 생성 (AI 주도)
 
 **7-0. 사전 분석 (코드 작성 전 필수)**
@@ -204,6 +260,7 @@ HTML을 작성하기 전에, MCP 스크린샷 + JSX를 분석하여 **모든 요
 | `text-content` | 제목, 본문, 설명, 유의사항 등 읽을 수 있는 텍스트 | `<h1>`~`<h3>`, `<p>`, `<span>` |
 | `interactive` | 입력 필드, 버튼, 공유 기능, 폼, 복사 기능 | `<input>`, `<button>`, `<a>` + `script.js` |
 | `static-visual` | 사진, 일러스트, 복합 이미지 (텍스트/인터랙션 없음) | `<img>` (REST API 또는 MCP 에셋) |
+| `html-renderable` | 이미지지만 테이블/리스트 등 구조화된 데이터 포함 (Step 6-5 결과) | `<table>`, `<ul>` 등 HTML로 변환 |
 | `decoration` | pointer-events-none, opacity, blur, 배경 장식 | `.page` 레벨 absolute |
 | `link` | 밑줄 텍스트, 클릭 유도 텍스트 | `<a href>` |
 | `exclude` | download-assets 경고 에셋 (<1KB, stroke-only) | HTML에서 제외 |
