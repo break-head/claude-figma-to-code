@@ -10,8 +10,8 @@
     "capture": "node tools/capture.js"
   },
   "dependencies": {
-    "@tailwindcss/cli": "^4.1.0",
+    "@tailwindcss/cli": "^4.2.2",
     "playwright": "^1.52.0",
-    "tailwindcss": "^4.1.0"
+    "tailwindcss": "^4.2.2"
   }
 }

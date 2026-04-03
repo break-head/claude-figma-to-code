@@ -32,16 +32,18 @@ Figma URL → MCP(스크린샷+JSX)
   → 복합 노드 래스터 내보내기 (Figma REST API)
   → 시맨틱 HTML/CSS 생성 (AI 주도, 스크린샷 기준)
   → MCP 에셋 다운로드
+  → extract-fonts (폰트 임베딩)
   → capture 검증
 ```
 
-### 도구 (6개)
+### 도구 (7개)
 
 | 도구 | 용도 | 속도 |
 |---|---|---|
 | `tools/classify-nodes.js` | MCP JSX 자동 분석 → 에셋 전략 분류 (asset-plan.json) | 즉시 |
 | `tools/export-nodes.js` | Figma REST API로 노드를 래스터 PNG 내보내기 | 수초 |
 | `tools/download-assets.js` | assets-manifest.json의 이미지를 병렬 다운로드 | 수초 |
+| `tools/extract-fonts.js` | 시스템/Google Fonts 폰트 탐색 → woff2/woff 변환 및 임베딩 | ~10초 |
 | `tools/jsx-to-html.js` | MCP JSX → HTML 기계 변환 (참조용) | 즉시 |
 | `tools/tailwind-to-css.js` | HTML 내 Tailwind 클래스 → 실제 CSS 추출 (참조용) | ~20ms |
 | `tools/capture.js` | Playwright로 렌더링 스크린샷 캡처 (검증용) | 수초 |
@@ -208,7 +210,19 @@ node tools/download-assets.js output/{프로젝트명}/
 3. `@media (max-width: 768px)`로 모바일 오버라이드
 4. 완료 후 `mobile-ref.html` 삭제
 
-#### 8. 시각적 검증 루프
+#### 8. 폰트 추출 및 임베딩
+```bash
+# source.jsx를 .mcp-source.jsx로 복사 (extract-fonts가 읽는 파일)
+cp output/{프로젝트명}/source.jsx output/{프로젝트명}/.mcp-source.jsx
+
+# 폰트 추출 실행
+node tools/extract-fonts.js output/{프로젝트명}/
+```
+- 시스템에 설치된 폰트 → woff2/woff 변환 후 `assets/fonts/`에 저장, `@font-face` CSS 자동 삽입
+- 시스템에 없지만 Google Fonts에 있는 폰트 → `<link>` 태그 index.html에 자동 삽입
+- 결과는 `fonts-manifest.json`에 기록
+
+#### 9. 시각적 검증 루프
 ```bash
 # 데스크탑
 node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{프로젝트명}/.preview.png {프레임너비}
@@ -221,7 +235,7 @@ node tools/capture.js file://$(pwd)/output/{프로젝트명}/index.html output/{
 2. MCP 원본 스크린샷과 비교
 3. 차이가 있으면 Edit으로 수정 → 재캡처 (최대 2회)
 
-#### 9. 결과 안내
+#### 10. 결과 안내
 ```
 변환 완료!
 
@@ -260,7 +274,9 @@ output/{프로젝트명}/
 ├── styles.css
 ├── script.js           (필요시)
 ├── assets-manifest.json
-└── assets/
+├── fonts-manifest.json
+├── assets/
+└── assets/fonts/       (woff2/woff 폰트)
 ```
 
 ## 실행
